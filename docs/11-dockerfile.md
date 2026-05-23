@@ -10,7 +10,7 @@ Recipe Docker uses to produce a runnable image of the service. Multi-stage so th
 # syntax=docker/dockerfile:1.7
 
 # ---------- Builder ----------
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.85-slim-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -58,11 +58,11 @@ Opts into Docker's "BuildKit" frontend version 1.7. Required for some newer inst
 ### Stage 1: builder
 
 ```dockerfile
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.85-slim-bookworm AS builder
 WORKDIR /app
 ```
 
-- `rust:1.82-slim-bookworm` — the official Rust toolchain image, "slim" variant (fewer packages baked in), based on Debian Bookworm. Pinning the major+minor version (`1.82`) makes builds reproducible — when Rust 1.83 ships, our build doesn't silently change.
+- `rust:1.85-slim-bookworm` — the official Rust toolchain image, "slim" variant (fewer packages baked in), based on Debian Bookworm. Pinning the major+minor version (`1.85`) makes builds reproducible — when Rust 1.86 ships, our build doesn't silently change. 1.85 is the minimum because a transitive dep (`ravif`, via the `image` crate) requires Cargo's edition-2024 support.
 - `AS builder` names this stage so the runtime stage can copy from it.
 - `WORKDIR /app` — like `cd /app`. Also creates the directory.
 
@@ -167,7 +167,7 @@ CMD ["ekoru-image-processor"]
 | Decision                                                            | Why                                                                                          |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Multi-stage build                                                    | Final image ~80 MB instead of ~1.5 GB. Smaller pulls, faster deploys, smaller attack surface. |
-| Pin Rust version (`1.82` not `latest`)                                | Reproducible builds; CI behavior doesn't change on Tuesday for free.                          |
+| Pin Rust version (`1.85` not `latest`)                                | Reproducible builds; CI behavior doesn't change on Tuesday for free.                          |
 | Dummy-main dependency caching trick                                   | 10x speed-up on the typical "I edited one file" rebuild.                                       |
 | `libssl-dev` in builder, `libssl3` in runtime                         | Builder needs headers; runtime only needs the shared lib.                                     |
 | Drop privileges to a non-root user                                    | Hardening — defense in depth against container escapes.                                       |
@@ -178,7 +178,7 @@ CMD ["ekoru-image-processor"]
 
 | You want to…                                                        | What to do                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Use a newer Rust                                                     | Bump `rust:1.82-slim-bookworm` to e.g. `rust:1.85-slim-bookworm`.                            |
+| Use a newer Rust                                                     | Bump `rust:1.85-slim-bookworm` to e.g. `rust:1.86-slim-bookworm`.                            |
 | Switch to musl for a static binary                                   | Replace the runtime base with `gcr.io/distroless/static-debian12` and build with `--target x86_64-unknown-linux-musl`. |
 | Skip the `wget` install                                              | Replace the compose healthcheck with `["CMD", "/usr/local/bin/ekoru-image-processor", "--health"]` and implement a `--health` flag (more code, smaller image). |
 | Use cargo-chef for caching                                           | Slightly fancier; install `cargo-chef`, prepare a recipe, cook deps, build. Often overkill for small projects. |

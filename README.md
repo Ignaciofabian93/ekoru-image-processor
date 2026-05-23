@@ -179,7 +179,7 @@ The gateway needs the **same** `INTERNAL_TOKEN` value for each environment. Once
 
 ### Prerequisites
 
-- **Rust** ≥ 1.82. Install via [rustup](https://rustup.rs/). Verify with `rustc --version`.
+- **Rust** ≥ 1.85. Install via [rustup](https://rustup.rs/). Verify with `rustc --version`. (1.85 is required because a transitive dep — `ravif`, pulled in by `image` — needs Cargo edition-2024 support.)
 - **Docker Desktop** (if you want to run with compose).
 - A populated `.env` file (see above).
 
