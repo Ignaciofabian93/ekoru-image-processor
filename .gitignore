@@ -1,0 +1,15 @@
+/target
+
+# Env files contain secrets — never commit them.
+.env
+.env.staging
+.env.prod
+.env.local
+.env*
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

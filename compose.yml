@@ -1,0 +1,28 @@
+# Local development compose.
+# Use this from your machine while iterating; ports are exposed locally so
+# you can curl the service directly without going through the gateway.
+#
+# Run with:   docker compose up --build
+
+name: 'ekoru-image-processor-dev'
+
+services:
+  ekoru-image-processor:
+    image: ekoru-image-processor:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ekoru-image-processor-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Exposed locally for dev only. In staging/prod the service is NOT
+      # exposed to the host — only reachable from inside the docker network.
+      - '8090:8090'
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:8090/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
