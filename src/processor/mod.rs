@@ -1,4 +1,7 @@
-use image::{imageops::FilterType, ImageFormat};
+use image::{
+    imageops::FilterType, metadata::Orientation, DynamicImage, ImageDecoder, ImageFormat,
+    ImageReader,
+};
 use std::io::Cursor;
 
 pub struct ProcessConfig {
@@ -25,7 +28,14 @@ pub fn config_for(entity: &str) -> ProcessConfig {
 }
 
 pub fn process(bytes: &[u8], config: &ProcessConfig) -> Result<ProcessedImage, image::ImageError> {
-    let img = image::load_from_memory(bytes)?;
+    let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(Orientation::NoTransforms);
+    let mut img = DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+
     let resized = img.resize(config.max_width, config.max_height, FilterType::Lanczos3);
     let width = resized.width();
     let height = resized.height();

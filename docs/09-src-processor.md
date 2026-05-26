@@ -12,7 +12,10 @@ It's pure (no I/O, no network), which makes it easy to test and easy to swap out
 ## The full file
 
 ```rust
-use image::{imageops::FilterType, ImageFormat};
+use image::{
+    imageops::FilterType, metadata::Orientation, DynamicImage, ImageDecoder, ImageFormat,
+    ImageReader,
+};
 use std::io::Cursor;
 
 pub struct ProcessConfig {
@@ -39,7 +42,14 @@ pub fn config_for(entity: &str) -> ProcessConfig {
 }
 
 pub fn process(bytes: &[u8], config: &ProcessConfig) -> Result<ProcessedImage, image::ImageError> {
-    let img = image::load_from_memory(bytes)?;
+    let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(Orientation::NoTransforms);
+    let mut img = DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+
     let resized = img.resize(config.max_width, config.max_height, FilterType::Lanczos3);
     let width = resized.width();
     let height = resized.height();
@@ -64,12 +74,19 @@ This file lives at `src/processor/mod.rs` rather than `src/processor.rs`. Both f
 ### Imports
 
 ```rust
-use image::{imageops::FilterType, ImageFormat};
+use image::{
+    imageops::FilterType, metadata::Orientation, DynamicImage, ImageDecoder, ImageFormat,
+    ImageReader,
+};
 use std::io::Cursor;
 ```
 
 - `image::imageops::FilterType` — the resampling algorithm enum (Lanczos3, Triangle, Nearest, …).
+- `image::metadata::Orientation` — enum of the 8 EXIF orientation values (NoTransforms, Rotate90, Rotate180, …).
+- `image::DynamicImage` — the decoded pixel buffer, an enum wrapping every supported pixel layout.
+- `image::ImageDecoder` — trait that decoders implement. We need it to call `.orientation()` and to feed `DynamicImage::from_decoder`.
 - `image::ImageFormat` — enum of supported encode/decode formats.
+- `image::ImageReader` — the higher-level reader that sniffs the format and produces a decoder.
 - `std::io::Cursor` — a wrapper that makes an in-memory `Vec<u8>` look like a file (i.e. implements `Read + Write + Seek`). Required because the `image` encoder writes to anything that implements `Write` — and we want it to write to memory, not a file.
 
 ### The data types
@@ -133,15 +150,31 @@ Returns:
 
 It's a **synchronous** function. There's no I/O — only CPU work. Calling it from an async handler is fine because the work is short-lived (typical image: tens of ms). If we ever start handling very large images that take hundreds of ms, we'd wrap the call in `tokio::task::spawn_blocking` to keep the async executor responsive.
 
-#### Decoding
+#### Decoding (with EXIF orientation handling)
 
 ```rust
-let img = image::load_from_memory(bytes)?;
+let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+let mut decoder = reader.into_decoder()?;
+let orientation = decoder
+    .orientation()
+    .unwrap_or(Orientation::NoTransforms);
+let mut img = DynamicImage::from_decoder(decoder)?;
+img.apply_orientation(orientation);
 ```
 
-`image::load_from_memory` autodetects the format from magic bytes (JPEG starts with `FF D8 FF`, PNG with `89 50 4E 47`, …) and decodes the whole file into a `DynamicImage`. `DynamicImage` is an enum wrapping every supported pixel layout (RGB8, RGBA8, RGB16, …).
+This block does what a single `image::load_from_memory` call almost does — but with one critical addition: it honours the **EXIF Orientation tag**. Phone cameras almost never rotate the raw pixel buffer for "portrait" photos; instead they leave the buffer in its native landscape orientation and write an Orientation tag (usually `Rotate 90 CW`) telling viewers how to display it. A naive decoder ignores that tag and decodes the buffer as-is — which is why uploads were coming out rotated 90°.
 
-The `?` propagates any decode error as `image::ImageError`. In the handler, the `#[from]` conversion in `AppError` turns that into `AppError::Image` → HTTP 422.
+Walking through the lines:
+
+- `ImageReader::new(Cursor::new(bytes)).with_guessed_format()?` — wraps the input bytes in `image`'s higher-level reader and sniffs the format from magic bytes (JPEG `FF D8 FF`, PNG `89 50 4E 47`, …). `with_guessed_format` returns `io::Result`; the `?` converts the error to `image::ImageError` via the existing `From<io::Error>` impl.
+- `reader.into_decoder()?` — consumes the reader and gives us a decoder trait object. We need this layer (rather than `load_from_memory`) because the orientation method lives on the decoder.
+- `decoder.orientation().unwrap_or(Orientation::NoTransforms)` — reads the EXIF Orientation tag. Formats without EXIF (PNG, WebP) return `NoTransforms`. If parsing fails, `unwrap_or` falls back to the identity transform so a malformed EXIF block doesn't kill the upload.
+- `DynamicImage::from_decoder(decoder)?` — actually decodes pixels into a `DynamicImage` (an enum wrapping every supported pixel layout: RGB8, RGBA8, RGB16, …). Note `let mut img` — we're about to mutate it.
+- `img.apply_orientation(orientation)` — physically rotates and/or flips the pixel buffer to match the tag. After this, the buffer itself is upright; the original EXIF tag is no longer needed.
+
+Any `?` in this block propagates as `image::ImageError`. In the handler, the `#[from]` conversion in `AppError` turns that into `AppError::Image` → HTTP 422.
+
+For deeper background — including why this matters, what each EXIF value means, and what the fix doesn't cover — see [14-exif-orientation.md](14-exif-orientation.md).
 
 #### Resizing
 
@@ -231,6 +264,6 @@ We defaulted to lossless because (a) it doesn't add a C dependency and (b) for t
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Crop instead of letterbox                                   | Use `img.resize_to_fill(w, h, filter)` instead of `resize`. Produces an exact `w × h` output. |
 | Generate a thumbnail plus a full-size image                 | Run `process` twice with different presets; return both from the handler.                    |
-| Add EXIF stripping / privacy                                 | `image::load_from_memory` already discards EXIF on re-encode. Lat/long etc. are gone.       |
+| Add EXIF stripping / privacy                                 | Re-encoding to WebP already drops EXIF. Lat/long etc. are gone. We read `Orientation` *before* the re-encode and bake it into the pixels — see [14-exif-orientation.md](14-exif-orientation.md). |
 | Add JPEG fallback for very old browsers                     | Branch in `process` on a "format" preset; encode as `ImageFormat::Jpeg` when requested.      |
 | Cap input dimensions before resizing (DOS protection)       | Check `img.width() * img.height()` against a max megapixel count, return custom error.       |
