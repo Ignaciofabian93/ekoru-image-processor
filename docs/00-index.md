@@ -29,6 +29,7 @@ If you're going through this end-to-end, read in this order:
 | 12 | [12-compose-files.md](12-compose-files.md)       | `compose.yml`, `compose.staging.yml`, `compose.prod.yml`         |
 | 13 | [13-env-files.md](13-env-files.md)               | `.env`, `.env.staging`, `.env.prod`, `.env.example`              |
 | 14 | [14-exif-orientation.md](14-exif-orientation.md) | EXIF orientation — why portrait photos rotated, and the fix       |
+| 15 | [15-limits-and-tests.md](15-limits-and-tests.md) | 2026-10-10: decode limits, blocking pool, storage enum, tests    |
 
 ## Quick-reference: Rust idioms used everywhere
 

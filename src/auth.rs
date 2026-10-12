@@ -34,3 +34,19 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     }
     diff == 0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::constant_time_eq;
+
+    #[test]
+    fn compares_whole_tokens() {
+        assert!(constant_time_eq(b"secret-token-1234", b"secret-token-1234"));
+        assert!(!constant_time_eq(
+            b"secret-token-1234",
+            b"secret-token-1235"
+        ));
+        assert!(!constant_time_eq(b"secret-token-1234", b"secret-token-123"));
+        assert!(!constant_time_eq(b"", b"x"));
+    }
+}

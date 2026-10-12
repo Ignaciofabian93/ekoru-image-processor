@@ -38,6 +38,8 @@ impl IntoResponse for AppError {
             AppError::MissingField(_) | AppError::InvalidField(_) | AppError::Multipart(_) => {
                 StatusCode::BAD_REQUEST
             }
+            // Over the decoder limits (IMG-1): the request is wrong, not the image.
+            AppError::Image(image::ImageError::Limits(_)) => StatusCode::BAD_REQUEST,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::Image(_) => StatusCode::UNPROCESSABLE_ENTITY,
@@ -50,6 +52,14 @@ impl IntoResponse for AppError {
             tracing::warn!(error = %self, "client error");
         }
 
-        (status, Json(json!({ "error": self.to_string() }))).into_response()
+        let message = match &self {
+            AppError::Image(image::ImageError::Limits(_)) => format!(
+                "image too large: at most {} px per side and {} MB decoded",
+                crate::processor::MAX_SOURCE_SIDE,
+                crate::processor::MAX_DECODE_ALLOC / (1024 * 1024)
+            ),
+            other => other.to_string(),
+        };
+        (status, Json(json!({ "error": message }))).into_response()
     }
 }

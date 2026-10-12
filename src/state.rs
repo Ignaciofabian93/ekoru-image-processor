@@ -7,11 +7,11 @@ use aws_sdk_s3::{
     Client as S3Client,
 };
 
-use crate::config::Config;
+use crate::{config::Config, storage::Store};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub s3: Arc<S3Client>,
+    pub store: Arc<Store>,
     pub cfg: Arc<Config>,
 }
 
@@ -36,8 +36,17 @@ impl AppState {
             .build();
 
         Ok(Self {
-            s3: Arc::new(S3Client::from_conf(s3_cfg)),
+            store: Arc::new(Store::R2(S3Client::from_conf(s3_cfg))),
             cfg: Arc::new(cfg),
         })
+    }
+
+    /// State backed by an in-memory store, for handler tests.
+    #[cfg(test)]
+    pub fn in_memory(cfg: Config) -> Self {
+        Self {
+            store: Arc::new(Store::Memory(Default::default())),
+            cfg: Arc::new(cfg),
+        }
     }
 }

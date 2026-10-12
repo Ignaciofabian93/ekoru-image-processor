@@ -54,7 +54,11 @@ pub async fn handle_upload(
 
     let original_size = raw.len();
     let preset = processor::config_for(&entity);
-    let processed = processor::process(&raw, &preset)?;
+    // Decoding and Lanczos resizing are CPU-bound for up to a second; on the
+    // blocking pool they cannot stall the async workers serving other requests.
+    let processed = tokio::task::spawn_blocking(move || processor::process(&raw, &preset))
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("image task failed: {e}")))??;
     let processed_size = processed.bytes.len();
 
     let key = storage::r2::upload(&state, &processed.bytes, &entity, &entity_id).await?;

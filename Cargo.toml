@@ -27,3 +27,8 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[dev-dependencies]
+# `oneshot` on the router, and reading response bodies, in the handler tests.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -1,14 +1,8 @@
 use anyhow::Result;
-use axum::{
-    extract::DefaultBodyLimit,
-    middleware,
-    routing::{delete, get, post},
-    Router,
-};
 use std::net::SocketAddr;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+mod app;
 mod auth;
 mod config;
 mod error;
@@ -31,23 +25,8 @@ async fn main() -> Result<()> {
         .init();
 
     let cfg = config::Config::from_env()?;
-    let body_limit = cfg.max_upload_bytes + 1024 * 1024;
     let state = AppState::new(cfg).await?;
-
-    let protected = Router::new()
-        .route("/process", post(handlers::upload::handle_upload))
-        .route("/objects/{*key}", delete(handlers::delete::handle_delete))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::require_internal_token,
-        ));
-
-    let app = Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .merge(protected)
-        .layer(DefaultBodyLimit::max(body_limit))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    let app = app::router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));
     let listener = tokio::net::TcpListener::bind(addr).await?;
