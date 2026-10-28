@@ -248,22 +248,22 @@ This builds the image (slow first time, ~3–6 min) and starts the container wit
 
 ## Deploying staging
 
-On the staging server (the same host that runs `ekoru-gateway-staging`):
+Jenkins deploys it, like every other EKORU service (see the `Jenkinsfile`). A push to `main` runs:
+
+1. **Checks:** `cargo fmt --check` and `cargo clippy --all-targets --locked -- -D warnings`, in `rust:1.94-slim-bookworm`.
+2. **Test:** `cargo test --locked`.
+3. **Deploy Staging:** writes `.env.staging` from Infisical (folder `/ekoru-image-processor`, environment `staging`), builds, starts the container, and waits up to 2 minutes for its healthcheck. If it isn't healthy, the stage fails and prints the last log lines. Then it pushes the tag `staging/v<version from Cargo.toml>`.
+4. **Confirm E2E OK:** waits up to 24 hours for someone to approve production.
+5. **Deploy Production:** the same with `.env.prod` and the `prod` environment.
+
+Env values live in Infisical only. To change one, edit it there and run the pipeline again.
+
+The image is built with the layer cache, unlike the Node services. The compiled dependencies sit in their own layer, so a deploy that doesn't touch `Cargo.toml` or `Cargo.lock` skips minutes of compiling.
+
+By hand, only if Jenkins is down, on the server from a checkout of this repo, with the env file written from Infisical:
 
 ```bash
-# 1. Clone or pull this repo
-git pull
-
-# 2. Ensure the env file exists and has real values (NOT REPLACE_ME)
-cat .env.staging       # sanity-check
-
-# 3. Make sure the shared network exists (only needed once per host)
-docker network create ekoru-staging-network || true
-
-# 4. Build + start
 docker compose -f compose.staging.yml up -d --build
-
-# 5. Watch the logs
 docker compose -f compose.staging.yml logs -f
 ```
 
@@ -279,15 +279,7 @@ It is **not** reachable from outside the host. There is no `ports:` mapping in t
 
 ## Deploying production
 
-Same as staging, swapping the file name:
-
-```bash
-git pull
-cat .env.prod
-docker network create ekoru-network || true
-docker compose -f compose.prod.yml up -d --build
-docker compose -f compose.prod.yml logs -f
-```
+The pipeline's last stage, after the approval in **Confirm E2E OK**. By hand, the same as staging with `compose.prod.yml` and `.env.prod`.
 
 Internal DNS: `http://ekoru-image-processor:8090`.
 
