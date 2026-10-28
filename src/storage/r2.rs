@@ -1,4 +1,4 @@
-use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::{error::DisplayErrorContext, primitives::ByteStream};
 use uuid::Uuid;
 
 use super::Store;
@@ -22,7 +22,10 @@ pub async fn upload(
                 .cache_control("public, max-age=31536000, immutable")
                 .send()
                 .await
-                .map_err(|e| AppError::Storage(format!("put_object: {e}")))?;
+                // `{e}` alone prints "service error"; R2's reason is in the source chain.
+                .map_err(|e| {
+                    AppError::Storage(format!("put_object: {}", DisplayErrorContext(&e)))
+                })?;
         }
         #[cfg(test)]
         Store::Memory(map) => {
@@ -41,7 +44,9 @@ pub async fn delete(state: &AppState, key: &str) -> Result<(), AppError> {
                 .key(key)
                 .send()
                 .await
-                .map_err(|e| AppError::Storage(format!("delete_object: {e}")))?;
+                .map_err(|e| {
+                    AppError::Storage(format!("delete_object: {}", DisplayErrorContext(&e)))
+                })?;
         }
         #[cfg(test)]
         Store::Memory(map) => {

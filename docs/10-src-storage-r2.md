@@ -150,7 +150,7 @@ The AWS SDK uses the **fluent builder** pattern: `put_object()` returns a builde
   - `immutable` — promises the content at this URL will never change. Browsers skip revalidation entirely. Safe to assert because every upload gets a brand-new UUID — old URLs always point to old content.
 - `.send()` — returns a `Future` that resolves to a `Result<PutObjectOutput, SdkError<PutObjectError>>`.
 - `.await` — waits for the future to complete.
-- `.map_err(|e| AppError::Storage(format!("put_object: {e}")))` — converts the SDK error into our error type with a descriptive prefix.
+- `.map_err(|e| AppError::Storage(format!("put_object: {}", DisplayErrorContext(&e))))` — converts the SDK error into our error type with a descriptive prefix. `DisplayErrorContext` prints the whole source chain, so the log shows R2's reason (`AccessDenied`, `NoSuchBucket`, `SignatureDoesNotMatch`…); a plain `{e}` prints only "service error". The gateway only logs this text; users get a generic error.
 - `?` — propagates the error if any. We don't need the `PutObjectOutput` (it contains `etag`, `version_id`, etc. that we don't use), so we just discard it on the success path.
 
 ### `Ok(key)`
@@ -184,7 +184,7 @@ Mirror of `upload` minus the body. `delete_object` is idempotent in S3/R2 — de
 | UUID v4 in the key, not a hash of the bytes                              | We want every upload to produce a new URL (so cache invalidation is "just upload"). Hashing would dedupe across users, which has surprising privacy implications. |
 | `Cache-Control: immutable, max-age=1y`                                   | Combined with UUID keys, this is the ideal cache config: viewers never revalidate; updates are a new URL. |
 | `.to_vec()` on the body bytes                                            | The SDK wants owned bytes for the body. Worth the allocation for clarity.            |
-| `map_err` to `AppError::Storage` instead of `#[from]`                    | The SDK errors are nested generics (`SdkError<PutObjectError>`) and we'd need many `#[from]` impls. Wrapping their `Display` is simpler and the chained error message is good enough. |
+| `map_err` to `AppError::Storage` instead of `#[from]`                    | The SDK errors are nested generics (`SdkError<PutObjectError>`) and we'd need many `#[from]` impls. Wrapping them in `DisplayErrorContext` is simpler and keeps R2's reason in the message. |
 | No retries here                                                          | The AWS SDK retries by default for transient errors. If you need custom retry policy, configure it on the SDK's `RetryConfig` in `state.rs`. |
 | `delete_object` always returns 204 even when missing                     | Matches S3 semantics; lets the handler be idempotent without extra logic.            |
 
