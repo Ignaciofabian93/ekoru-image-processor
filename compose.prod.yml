@@ -17,6 +17,10 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
+    # docker stop: a small init passes SIGTERM to the app, which finishes its
+    # requests and jobs in progress. Docker kills it only after 30 seconds.
+    init: true
+    stop_grace_period: 30s
     container_name: ekoru-image-processor
     env_file:
       - .env.prod
